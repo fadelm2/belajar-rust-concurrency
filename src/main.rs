@@ -7,7 +7,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use std::env::join_paths;
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicI32, Ordering};
     use std::sync::mpsc;
     use std::thread;
     use std::thread::JoinHandle;
@@ -121,7 +121,9 @@ mod tests {
     fn test_thread_factory() {
         let factory = thread::Builder::new().name("My Thread".to_string());
 
-        let handle = factory.spawn(calculate).expect("Failed to create a new thread");
+        let handle = factory
+            .spawn(calculate)
+            .expect("Failed to create a new thread");
         let total = handle.join().unwrap();
 
         println!("Final Total Counter: {:?}", total);
@@ -147,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_channel_queue() {
-        let(sender, receiver) = std::sync::mpsc::channel::<String>();
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
         let handle1 = thread::spawn(move || {
             for _ in 0..5 {
                 thread::sleep(Duration::from_secs(2));
@@ -195,14 +197,14 @@ mod tests {
         let sender2 = sender.clone();
 
         let handle3 = thread::spawn(move || {
-            for i in 0..5  {
+            for i in 0..5 {
                 thread::sleep(Duration::from_secs(2));
                 sender2.send("Hello From sender 2".to_string());
             }
         });
 
         let handle1 = thread::spawn(move || {
-            for i in 0..5  {
+            for _ in 0..5 {
                 thread::sleep(Duration::from_secs(2));
                 sender.send("Hello From sender 1".to_string());
             }
@@ -227,7 +229,7 @@ mod tests {
         for _ in 0..10 {
             let handle = thread::spawn(move || unsafe {
                 for _ in 0..1000000 {
-                    COUNTER +=1
+                    COUNTER += 1
                 }
             });
             handles.push(handle);
@@ -237,18 +239,18 @@ mod tests {
             handle.join().unwrap()
         }
 
-        println!("Counter : {}", unsafe {COUNTER})
+        println!("Counter : {}", unsafe { COUNTER })
     }
 
     #[test]
     fn test_atomic() {
-        use::std::sync::atomic::{AtomicI32, Ordering};
+        use ::std::sync::atomic::{AtomicI32, Ordering};
 
         static counter: AtomicI32 = AtomicI32::new(0);
 
         let mut handles = vec![];
         for _ in 0..10 {
-            let handle = thread::spawn(move || unsafe {
+            let handle = thread::spawn(move || {
                 for _ in 0..1000000 {
                     counter.fetch_add(1, Ordering::Relaxed);
                 }
@@ -262,14 +264,13 @@ mod tests {
         println!("Counter : {}", counter.load(Ordering::Relaxed))
     }
 
-
     #[test]
     fn test_atomic_reference() {
-        use::std::sync::atomic::{AtomicI32, Ordering};
+        use ::std::sync::atomic::{AtomicI32, Ordering};
         use std::sync::Arc;
-        
+
         let counter = Arc::new(AtomicI32::new(0));
-        
+
         let mut handles = vec![];
         for _ in 0..10 {
             let counter_clone = Arc::clone(&counter);
@@ -283,16 +284,16 @@ mod tests {
         for handle in handles {
             handle.join().unwrap();
         }
-        
+
         println!("Counter : {}", counter.load(Ordering::Relaxed))
     }
-    
+
     #[test]
     fn test_mutex() {
         use std::sync::{Arc, Mutex};
-        
+
         let counter = Arc::new(Mutex::new(0));
-        
+
         let mut handles = vec![];
         for _ in 0..10 {
             let counter_clone = Arc::clone(&counter);
@@ -302,14 +303,128 @@ mod tests {
                     *data += 1;
                 }
             });
-            
+
             handles.push(handle);
         }
-        
+
         for handle in handles {
             handle.join().unwrap();
         }
         println!("Counter : {}", *counter.lock().unwrap())
-        
     }
+    use std::cell::RefCell;
+    use std::sync::{Arc, Barrier, Once};
+
+    thread_local! {
+        pub static NAME: RefCell<String> = RefCell::new("Default".to_string());
+    }
+
+    thread_local! {
+        pub static OTHER_NAME: RefCell<String> = RefCell::new("Default".to_string());
+    }
+
+    #[test]
+    fn test_thread_local() {
+        let handle = thread::spawn(|| {
+            NAME.with_borrow_mut(|name| {
+                *name = "Budi".to_string()
+            });
+
+            NAME.with_borrow(|name| {
+                println!("Hello: {}", name)
+            })
+        });
+        handle.join().unwrap();
+
+        NAME.with_borrow(|name| {
+            println!("Hello: {}", name)
+        })
+    }
+
+    #[test]
+    fn test_thread_panic() {
+        let handle = thread::spawn(|| {
+            panic!("oops!, Something went wrong");
+        });
+
+        match handle.join() {
+            Ok(_) => println!("thread finish"),
+            Err(_) => println!("thread panic")
+        }
+        println!("Application Finish")
+    }
+
+    #[test]
+    fn test_barrier() {
+        let barrier = Arc::new(Barrier::new(10));//harus sama dengan yang dibutuhkan kalo 10, kalo kurang, dia nggak jalan
+        let mut handles = vec![];
+
+        for i in 0..10 {
+            let barrier_clone = Arc::clone(&barrier);
+            let handle = thread::spawn(move || {
+                println!("Join Game-{}", i);
+                barrier_clone.wait();
+                println!("Gamer-{} Start!", i);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        println!("Aplication finis")
+    }
+
+    #[test]
+    fn test_barrier1() {
+        let barrier = Arc::new(Barrier::new(6));
+        let mut handles = vec![];
+
+        for i in 0..10 {
+            let barrier_clone = Arc::clone(&barrier);
+            let handle = thread::spawn(move || {
+                println!("Join Game-{}", i);
+                barrier_clone.wait();
+                println!("Gamer-{} Start!", i);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    static mut TOTAL_COUNTER: i32 = 0;
+    static TOTAL_INIT: Once = Once::new();
+
+    fn get_total() -> i32 {
+        unsafe {
+            TOTAL_INIT.call_once(|| {
+                println!("Call Once");
+                TOTAL_COUNTER +=1;
+            });
+            TOTAL_COUNTER
+        }
+    }
+
+#[test]
+    fn test_once1() {
+        let mut handles = vec![];
+
+        for i in 0..10 {
+            let handle = thread::spawn(move || {
+                let total = get_total();
+                println!("Total : {}", total);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+
+
 }
