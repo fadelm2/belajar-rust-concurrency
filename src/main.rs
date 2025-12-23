@@ -6,6 +6,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::env::join_paths;
+    use std::sync::atomic::Ordering;
     use std::sync::mpsc;
     use std::thread;
     use std::thread::JoinHandle;
@@ -124,7 +126,7 @@ mod tests {
 
         println!("Final Total Counter: {:?}", total);
     }
-    
+
     #[test]
     fn test_channel() {
         let (sender, receiver) = std::sync::mpsc::channel::<String>();
@@ -133,16 +135,16 @@ mod tests {
             thread::sleep(Duration::from_secs(1));
             sender.send("Hello From Thread".to_string());
         });
-        
+
         let handle2 = thread::spawn(move || {
             let message = receiver.recv().unwrap();
             println!("{}", message);
         });
-        
+
         let _ = handle1.join();
         let _ = handle2.join();
     }
-    
+
     #[test]
     fn test_channel_queue() {
         let(sender, receiver) = std::sync::mpsc::channel::<String>();
@@ -153,7 +155,7 @@ mod tests {
             }
             sender.send("Exit".to_string())
         });
-        
+
         let handle2 = thread::spawn(move || {
             loop {
                 let message = receiver.recv().unwrap();
@@ -165,5 +167,149 @@ mod tests {
         });
         let _ = handle1.join();
         let _ = handle2.join();
+    }
+    #[test]
+    fn test_channel_iterator() {
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+
+        let handle1 = thread::spawn(move || {
+            for _ in 0..5 {
+                thread::sleep(Duration::from_secs(2));
+                sender.send("Hello From Thread".to_string());
+            }
+        });
+
+        let handle2 = thread::spawn(move || {
+            for value in receiver.iter() {
+                println!("{}", value);
+            }
+        });
+
+        let _ = handle1.join();
+        let _ = handle2.join();
+    }
+
+    #[test]
+    fn test_channel_multi_sender() {
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        let sender2 = sender.clone();
+
+        let handle3 = thread::spawn(move || {
+            for i in 0..5  {
+                thread::sleep(Duration::from_secs(2));
+                sender2.send("Hello From sender 2".to_string());
+            }
+        });
+
+        let handle1 = thread::spawn(move || {
+            for i in 0..5  {
+                thread::sleep(Duration::from_secs(2));
+                sender.send("Hello From sender 1".to_string());
+            }
+        });
+
+        let handle2 = thread::spawn(move || {
+            for value in receiver.iter() {
+                println!("{}", value);
+            }
+        });
+
+        let _ = handle1.join();
+        let _ = handle2.join();
+        let _ = handle3.join();
+    }
+
+    static mut COUNTER: i32 = 0;
+
+    #[test]
+    fn test_race_condition() {
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let handle = thread::spawn(move || unsafe {
+                for _ in 0..1000000 {
+                    COUNTER +=1
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap()
+        }
+
+        println!("Counter : {}", unsafe {COUNTER})
+    }
+
+    #[test]
+    fn test_atomic() {
+        use::std::sync::atomic::{AtomicI32, Ordering};
+
+        static counter: AtomicI32 = AtomicI32::new(0);
+
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let handle = thread::spawn(move || unsafe {
+                for _ in 0..1000000 {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
+            });
+            handles.push(handle);
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        println!("Counter : {}", counter.load(Ordering::Relaxed))
+    }
+
+
+    #[test]
+    fn test_atomic_reference() {
+        use::std::sync::atomic::{AtomicI32, Ordering};
+        use std::sync::Arc;
+        
+        let counter = Arc::new(AtomicI32::new(0));
+        
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let counter_clone = Arc::clone(&counter);
+            let handle = thread::spawn(move || {
+                for _ in 0..1000000 {
+                    counter_clone.fetch_add(1, Ordering::Relaxed);
+                }
+            });
+            handles.push(handle);
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        
+        println!("Counter : {}", counter.load(Ordering::Relaxed))
+    }
+    
+    #[test]
+    fn test_mutex() {
+        use std::sync::{Arc, Mutex};
+        
+        let counter = Arc::new(Mutex::new(0));
+        
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let counter_clone = Arc::clone(&counter);
+            let handle = thread::spawn(move || {
+                for _ in 0..1000000 {
+                    let mut data = counter_clone.lock().unwrap();
+                    *data += 1;
+                }
+            });
+            
+            handles.push(handle);
+        }
+        
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        println!("Counter : {}", *counter.lock().unwrap())
+        
     }
 }
