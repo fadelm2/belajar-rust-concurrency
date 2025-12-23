@@ -142,4 +142,28 @@ mod tests {
         let _ = handle1.join();
         let _ = handle2.join();
     }
+    
+    #[test]
+    fn test_channel_queue() {
+        let(sender, receiver) = std::sync::mpsc::channel::<String>();
+        let handle1 = thread::spawn(move || {
+            for _ in 0..5 {
+                thread::sleep(Duration::from_secs(2));
+                sender.send("Hello From Thread".to_string());
+            }
+            sender.send("Exit".to_string())
+        });
+        
+        let handle2 = thread::spawn(move || {
+            loop {
+                let message = receiver.recv().unwrap();
+                if message == "Exit" {
+                    break;
+                }
+                println!("{}", message);
+            }
+        });
+        let _ = handle1.join();
+        let _ = handle2.join();
+    }
 }
