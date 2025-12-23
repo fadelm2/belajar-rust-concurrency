@@ -314,6 +314,7 @@ mod tests {
     }
     use std::cell::RefCell;
     use std::sync::{Arc, Barrier, Once};
+    use tokio::runtime::Runtime;
 
     thread_local! {
         pub static NAME: RefCell<String> = RefCell::new("Default".to_string());
@@ -425,6 +426,66 @@ mod tests {
         }
     }
 
+    async fn get_async_data() -> String {
+        thread::sleep(Duration::from_secs(2));
+        println!("Hello from Async");
+        return "Hello From Async".to_string();
+    }
 
+    #[tokio::test]
+    async fn test_async() {
+       let function = get_async_data();
+        println!("Finish Call Async");
+        let data = function.await;
+        println!("Finish Result: {}", data);
+    }
+
+    async fn get_database_data(wait: u64) -> String {
+        println!("{:?} : get database data", thread::current().id());
+        tokio::time::sleep(Duration::from_secs(wait)).await;
+        println!("{:?} : get database data", thread::current().id());
+        return "Hello From Database".to_string();
+    }
+
+    #[tokio::test]
+    async fn test_concurrent() {
+        let mut handles= vec![];
+
+        for i in 0..10 {
+            let handle = tokio::spawn(get_database_data(i));
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            let data = handle.await.unwrap();
+            println!("Response : {}", data)
+        }
+
+    }
+
+
+    async fn run_concurrent(runtime: Arc<Runtime>) {
+        let mut handles = vec![];
+
+        for i in 0..10 {
+          let handle = runtime.spawn(get_database_data(i));
+            handles.push(handle);
+        }
+        for handle in handles {
+            let data= handle.await.unwrap();
+            println!("Response : {}", data)
+        }
+    }
+
+    #[test]
+    fn test_runtime() {
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(10)
+                .enable_time()
+            .build().unwrap()
+        );
+        runtime.block_on(run_concurrent(Arc::clone(&runtime)));
+    }
 
 }
